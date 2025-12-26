@@ -4,6 +4,7 @@ import config
 from google.oauth2 import service_account
 from llama_index.core.llms.llm import LLM
 from llama_index.llms.anthropic import Anthropic
+from llama_index.llms.azure_openai import AzureOpenAI
 from llama_index.llms.openai import OpenAI
 from llama_index.llms.vertex import Vertex
 from pydantic import BaseModel
@@ -55,6 +56,26 @@ def get_llm(**kwargs) -> LLM:
             llm: LLM = OpenAI(
                 model=kwargs["model"],
                 api_key=cfg["OPENAI_API_KEY"],
+                max_tokens=kwargs["max_token"],
+            )
+
+        except Exception as e:
+            raise Exception(f"gen_config: Failed to get {provider} LLM") from e
+    elif provider == "azure" or provider == "azure_openai":
+        try:
+            model = cfg["AZURE_OPENAI_MODEL"]
+            api_key = cfg["AZURE_OPENAI_API_KEY"]
+            endpoint = cfg["AZURE_OPENAI_ENDPOINT"]
+            api_version = cfg["AZURE_OPENAI_API_VERSION"]
+            deployment = cfg["AZURE_OPENAI_DEPLOYMENT"]
+            print(f"Using Azure OpenAI model: {model}, deployment: {deployment}")
+            
+            llm: LLM = AzureOpenAI(
+                model=model,  # The actual model name (e.g., gpt-4o) - used for metadata
+                engine=deployment,  # The deployment name in Azure
+                api_key=api_key,
+                azure_endpoint=endpoint,
+                api_version=api_version,
                 max_tokens=kwargs["max_token"],
             )
 

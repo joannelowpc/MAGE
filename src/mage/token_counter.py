@@ -108,6 +108,12 @@ TOKEN_COSTS = {
     "gemini-2.0-flash-001": TokenCost(
         in_token_cost_per_token=0.1 / 1000000, out_token_cost_per_token=0.4 / 1000000
     ),
+    "gpt-4.1-nano": TokenCost(
+        in_token_cost_per_token=0.1 / 1000000, out_token_cost_per_token=0.4 / 1000000
+    ),
+    "gpt-4.1": TokenCost(
+        in_token_cost_per_token=2.0 / 1000000, out_token_cost_per_token=8.0 / 1000000
+    ),
 }
 
 
