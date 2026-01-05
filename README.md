@@ -130,6 +130,10 @@ args_dict = {
     "max_token": 8192,
     "use_golden_tb_in_mage": True,
     "key_cfg_path": "key.cfg",
+    # Simulator configuration (new in this version)
+    "simulator": "iverilog",  # Options: "iverilog", "vcs"
+    "vcs_path": None,  # Optional: Path to VCS installation if not in PATH
+    "vcs_flags": "",  # Optional: Additional VCS compilation flags
 }
 ```
 Where each argument means:
@@ -144,6 +148,9 @@ Where each argument means:
 9. top_p: Argument for LLM generation randomness. Usually between [0, 1]
 10. max_token: Maximum number of tokens the model is allowed to generate in its output.
 11. key_cfg_path: Path to your key.cfg file. Defaulted to be under MAGE
+12. simulator: Simulation tool to use. Options: "iverilog" (default), "vcs"
+13. vcs_path: (Optional) Path to VCS installation directory if not in system PATH
+14. vcs_flags: (Optional) Additional flags to pass to VCS compiler (e.g., "-kdb -lca")
 
 
 ## Development Guide

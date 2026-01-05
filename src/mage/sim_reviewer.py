@@ -6,6 +6,7 @@ from typing import Dict, List, Tuple
 from .bash_tools import CommandResult, run_bash_command
 from .benchmark_read_helper import TypeBenchmark
 from .log_utils import get_logger, set_log_dir
+from .gen_config import get_simulator_config, SimulatorType
 
 logger = get_logger(__name__)
 
@@ -22,17 +23,33 @@ def stderr_all_lines_benign(stderr: str) -> bool:
 
 
 def check_syntax(rtl_path: str) -> Tuple[bool, str]:
-    cmd = f"iverilog -t null -Wall -Winfloop -Wno-timescale -g2012 -o /dev/null {rtl_path}"
-    is_pass, sim_output = run_bash_command(cmd, timeout=60)
-    sim_output_obj = CommandResult.model_validate_json(sim_output)
-    is_pass = (
-        is_pass
-        and "syntax error" not in sim_output_obj.stdout
-        and (
-            sim_output_obj.stderr == ""
-            or stderr_all_lines_benign(sim_output_obj.stderr)
+    sim_config = get_simulator_config()
+    
+    if sim_config.simulator == SimulatorType.VCS:
+        # VCS syntax check: compile only without elaboration
+        vcs_exe = sim_config.get_vcs_executable()
+        cmd = f"{vcs_exe} -nc -sverilog {sim_config.vcs_flags} {rtl_path}"
+        is_pass, sim_output = run_bash_command(cmd, timeout=60)
+        sim_output_obj = CommandResult.model_validate_json(sim_output)
+        is_pass = (
+            is_pass
+            and "Error" not in sim_output_obj.stdout
+            and "Error" not in sim_output_obj.stderr
         )
-    )
+    else:
+        # iverilog syntax check (default)
+        cmd = f"iverilog -t null -Wall -Winfloop -Wno-timescale -g2012 -o /dev/null {rtl_path}"
+        is_pass, sim_output = run_bash_command(cmd, timeout=60)
+        sim_output_obj = CommandResult.model_validate_json(sim_output)
+        is_pass = (
+            is_pass
+            and "syntax error" not in sim_output_obj.stdout
+            and (
+                sim_output_obj.stderr == ""
+                or stderr_all_lines_benign(sim_output_obj.stderr)
+            )
+        )
+    
     logger.info(f"Syntax check is_pass: {is_pass}, \noutput: {sim_output}")
     return is_pass, sim_output
 
@@ -51,26 +68,46 @@ def sim_review(
     output_path_per_run: str,
     golden_rtl_path: str | None = None,
 ) -> Tuple[bool, int, str]:
+    sim_config = get_simulator_config()
     rtl_path = f"{output_path_per_run}/rtl.sv"
-    vvp_name = f"{output_path_per_run}/sim_output.vvp"
     tb_path = f"{output_path_per_run}/tb.sv"
     if golden_rtl_path is None:
         golden_rtl_path = ""
-    if os.path.isfile(vvp_name):
-        os.remove(vvp_name)
-    cmd = "iverilog -Wall -Winfloop -Wno-timescale -g2012 -o {} {} {} {}; vvp -n {}".format(
-        vvp_name, tb_path, rtl_path, golden_rtl_path, vvp_name
-    )
-    is_pass, sim_output = run_bash_command(cmd, timeout=60)
-    sim_output_obj = CommandResult.model_validate_json(sim_output)
-    is_pass = (
-        is_pass
-        and "SIMULATION PASSED" in sim_output_obj.stdout
-        and (
-            sim_output_obj.stderr == ""
-            or stderr_all_lines_benign(sim_output_obj.stderr)
+    
+    if sim_config.simulator == SimulatorType.VCS:
+        # VCS simulation flow
+        vcs_exe = sim_config.get_vcs_executable()
+        simv_exe = f"{output_path_per_run}/simv"
+        # Compile with VCS
+        compile_cmd = f"{vcs_exe} -sverilog -full64 {sim_config.vcs_flags} -o {simv_exe} {tb_path} {rtl_path} {golden_rtl_path}"
+        # Run simulation
+        cmd = f"{compile_cmd} && {simv_exe}"
+        is_pass, sim_output = run_bash_command(cmd, timeout=60)
+        sim_output_obj = CommandResult.model_validate_json(sim_output)
+        is_pass = (
+            is_pass
+            and "SIMULATION PASSED" in sim_output_obj.stdout
+            and "Error" not in sim_output_obj.stderr
         )
-    )
+    else:
+        # iverilog simulation flow (default)
+        vvp_name = f"{output_path_per_run}/sim_output.vvp"
+        if os.path.isfile(vvp_name):
+            os.remove(vvp_name)
+        cmd = "iverilog -Wall -Winfloop -Wno-timescale -g2012 -o {} {} {} {}; vvp -n {}".format(
+            vvp_name, tb_path, rtl_path, golden_rtl_path, vvp_name
+        )
+        is_pass, sim_output = run_bash_command(cmd, timeout=60)
+        sim_output_obj = CommandResult.model_validate_json(sim_output)
+        is_pass = (
+            is_pass
+            and "SIMULATION PASSED" in sim_output_obj.stdout
+            and (
+                sim_output_obj.stderr == ""
+                or stderr_all_lines_benign(sim_output_obj.stderr)
+            )
+        )
+    
     mismatch_cnt = sim_review_mismatch_cnt(sim_output_obj.stdout)
     logger.info(
         f"Simulation is_pass: {is_pass}, mismatch_cnt: {mismatch_cnt}\noutput: {sim_output}"
@@ -107,6 +144,7 @@ def sim_review_golden(
         benchmark_type == TypeBenchmark.VERILOG_EVAL_V2
         or benchmark_type == TypeBenchmark.VERILOG_EVAL_V1
     ):
+        sim_config = get_simulator_config()
         folder = (
             "dataset_code-complete-iccad2023"
             if benchmark_type == TypeBenchmark.VERILOG_EVAL_V1
@@ -114,22 +152,41 @@ def sim_review_golden(
         )
         tb_path = f"{benchmark_path}/{folder}/{task_id}_test.sv"
         ref_path = f"{benchmark_path}/{folder}/{task_id}_ref.sv"
-        vvp_name = f"{output_path_per_run}/sim_golden.vvp"
-        if os.path.isfile(vvp_name):
-            os.remove(vvp_name)
-        cmd = "iverilog -Wall -Winfloop -Wno-timescale -g2012 -s tb -o {} {} {} {}; vvp -n {}".format(
-            vvp_name, tb_path, rtl_path, ref_path, vvp_name
-        )
-        is_pass, sim_output = run_bash_command(cmd, timeout=60)
-        sim_output_obj = CommandResult.model_validate_json(sim_output)
-        is_pass = (
-            is_pass
-            and "First mismatch occurred at time" not in sim_output_obj.stdout
-            and (
-                sim_output_obj.stderr == ""
-                or stderr_all_lines_benign(sim_output_obj.stderr)
+        
+        if sim_config.simulator == SimulatorType.VCS:
+            # VCS simulation flow
+            vcs_exe = sim_config.get_vcs_executable()
+            simv_exe = f"{output_path_per_run}/simv_golden"
+            # Compile with VCS
+            compile_cmd = f"{vcs_exe} -sverilog -full64 {sim_config.vcs_flags} -o {simv_exe} {tb_path} {rtl_path} {ref_path}"
+            # Run simulation
+            cmd = f"{compile_cmd} && {simv_exe}"
+            is_pass, sim_output = run_bash_command(cmd, timeout=60)
+            sim_output_obj = CommandResult.model_validate_json(sim_output)
+            is_pass = (
+                is_pass
+                and "First mismatch occurred at time" not in sim_output_obj.stdout
+                and "Error" not in sim_output_obj.stderr
             )
-        )
+        else:
+            # iverilog simulation flow (default)
+            vvp_name = f"{output_path_per_run}/sim_golden.vvp"
+            if os.path.isfile(vvp_name):
+                os.remove(vvp_name)
+            cmd = "iverilog -Wall -Winfloop -Wno-timescale -g2012 -s tb -o {} {} {} {}; vvp -n {}".format(
+                vvp_name, tb_path, rtl_path, ref_path, vvp_name
+            )
+            is_pass, sim_output = run_bash_command(cmd, timeout=60)
+            sim_output_obj = CommandResult.model_validate_json(sim_output)
+            is_pass = (
+                is_pass
+                and "First mismatch occurred at time" not in sim_output_obj.stdout
+                and (
+                    sim_output_obj.stderr == ""
+                    or stderr_all_lines_benign(sim_output_obj.stderr)
+                )
+            )
+        
         logger.info(f"Golden simulation is_pass: {is_pass}, \noutput: {sim_output}")
         return is_pass, sim_output
     raise NotImplementedError  # Should not reach here

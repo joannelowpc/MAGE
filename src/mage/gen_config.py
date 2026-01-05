@@ -8,11 +8,38 @@ from llama_index.llms.azure_openai import AzureOpenAI
 from llama_index.llms.openai import OpenAI
 from llama_index.llms.vertex import Vertex
 from pydantic import BaseModel
+from enum import Enum
 
 from .log_utils import get_logger
 from .utils import VertexAnthropicWithCredentials
 
 logger = get_logger(__name__)
+
+
+class SimulatorType(str, Enum):
+    """Supported simulator types"""
+    IVERILOG = "iverilog"
+    VCS = "vcs"
+
+
+class SimulatorConfig(BaseModel):
+    """Configuration for simulation tools"""
+    simulator: SimulatorType = SimulatorType.IVERILOG
+    vcs_path: str | None = None  # Path to VCS installation if not in PATH
+    vcs_flags: str = ""  # Additional VCS compilation flags
+    
+    def get_vcs_executable(self) -> str:
+        """Get the VCS executable path"""
+        if self.vcs_path:
+            return f"{self.vcs_path}/bin/vcs"
+        return "vcs"
+    
+    def get_vcs_sim_executable(self) -> str:
+        """Get the VCS simulation executable path"""
+        return "./simv"  # VCS default output executable
+
+
+global_simulator_config = SimulatorConfig()
 
 
 class Config:
@@ -159,3 +186,34 @@ def set_exp_setting(temperature: float | None = None, top_p: float | None = None
     if top_p is not None:
         global_exp_setting.top_p = top_p
     return global_exp_setting
+
+
+def get_simulator_config() -> SimulatorConfig:
+    """Get the global simulator configuration"""
+    return global_simulator_config
+
+
+def set_simulator_config(
+    simulator: str | SimulatorType | None = None,
+    vcs_path: str | None = None,
+    vcs_flags: str | None = None,
+) -> SimulatorConfig:
+    """Set the global simulator configuration
+    
+    Args:
+        simulator: Simulator type (iverilog or vcs)
+        vcs_path: Path to VCS installation directory
+        vcs_flags: Additional VCS compilation flags
+    """
+    if simulator is not None:
+        if isinstance(simulator, str):
+            global_simulator_config.simulator = SimulatorType(simulator.lower())
+        else:
+            global_simulator_config.simulator = simulator
+    if vcs_path is not None:
+        global_simulator_config.vcs_path = vcs_path
+    if vcs_flags is not None:
+        global_simulator_config.vcs_flags = vcs_flags
+    
+    logger.info(f"Simulator configuration set to: {global_simulator_config}")
+    return global_simulator_config

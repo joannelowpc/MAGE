@@ -13,7 +13,7 @@ from mage.benchmark_read_helper import (
     TypeBenchmarkFile,
     get_benchmark_contents,
 )
-from mage.gen_config import get_llm, set_exp_setting
+from mage.gen_config import get_llm, set_exp_setting, set_simulator_config
 from mage.log_utils import get_logger
 from mage.sim_reviewer import sim_review_golden_benchmark
 from mage.token_counter import TokenCount
@@ -24,7 +24,7 @@ logger = get_logger(__name__)
 args_dict = {
     "provider": "azure",
     "model": os.getenv('AZURE_OPENAI_MODEL'),
-    "filter_instance": "^(Prob011_norgate)$",
+    "filter_instance": "^(Prob145_circuit8)$",
     # "filter_instance": "^(.*)$",
     "type_benchmark": "verilog_eval_v2",
     "path_benchmark": "./verilog-eval",
@@ -33,8 +33,12 @@ args_dict = {
     "temperature": 0.85,
     "top_p": 0.95,
     "max_token": 8192,
-    "use_golden_tb_in_mage": True,
+    "use_golden_tb_in_mage": False,
     "key_cfg_path": "./key.cfg",
+    # Simulator configuration
+    "simulator": "vcs",  # Options: "iverilog", "vcs"
+    "vcs_path": None,  # Set to VCS installation path if not in PATH, e.g., "/tools/synopsys/vcs/T-2022.06"
+    "vcs_flags": "",  # Additional VCS flags, e.g., "-kdb -lca"
 }
 
 
@@ -160,6 +164,13 @@ def main():
     identifier_head = args.run_identifier
     n = args.n
     set_exp_setting(temperature=args.temperature, top_p=args.top_p)
+    
+    # Configure simulator
+    set_simulator_config(
+        simulator=args.simulator,
+        vcs_path=args.vcs_path,
+        vcs_flags=args.vcs_flags,
+    )
 
     for i in range(n):
         print(f"Round {i+1}/{n}")
