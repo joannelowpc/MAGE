@@ -114,6 +114,9 @@ TOKEN_COSTS = {
     "gpt-4.1": TokenCost(
         in_token_cost_per_token=2.0 / 1000000, out_token_cost_per_token=8.0 / 1000000
     ),
+    "gpt-4o": TokenCost(
+        in_token_cost_per_token=2.5 / 1000000, out_token_cost_per_token=10.0 / 1000000
+    ),
 }
 
 
